@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Weather Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',sans-serif}
+body{background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);min-height:100vh;color:white;padding:20px}
+.container{max-width:900px;margin:0 auto}
+h1{text-align:center;font-size:32px;margin:20px 0 5px}
+p.sub{text-align:center;opacity:.8;margin-bottom:25px}
+.search{display:flex;gap:10px;max-width:500px;margin:0 auto 20px}
+.search input{flex:1;padding:14px 18px;border:none;border-radius:30px;font-size:16px;outline:none;color:#333}
+.search button{padding:14px 26px;border:none;border-radius:30px;background:#ffcc00;font-weight:700;cursor:pointer;font-size:15px}
+.search button:hover{background:#ffdb4d}
+#error{background:#ff4d4d;padding:12px;border-radius:12px;text-align:center;display:none;margin-bottom:20px;font-weight:600}
+#loading{text-align:center;display:none;margin:20px;font-size:18px}
+.current{background:rgba(255,255,255,.15);backdrop-filter:blur(10px);border-radius:20px;padding:25px;text-align:center;display:none}
+.current h2{font-size:28px}
+.big{font-size:70px;font-weight:800;margin:10px 0}
+.details{display:flex;justify-content:center;gap:25px;margin-top:15px;flex-wrap:wrap;opacity:.9}
+.forecast{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:20px;display:none}
+.day{background:rgba(255,255,255,.15);border-radius:15px;padding:15px;text-align:center}
+.day b{display:block;margin-bottom:8px}
+.day .icon{font-size:30px}
+@media(max-width:600px){.forecast{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🌦️ Live Weather Dashboard</h1>
+<p class="sub">Type any city - Get real-time weather + 5-day forecast</p>
+
+<div class="search">
+<input id="cityInput" placeholder="Enter city... e.g. Nagpur" />
+<button onclick="getWeather()">Search</button>
+</div>
+
+<div id="error"></div>
+<div id="loading">⏳ Loading weather...</div>
+
+<div class="current" id="currentBox">
+<h2 id="cityName">-</h2>
+<div class="big"><span id="temp">-</span>°C</div>
+<div id="condition" style="font-size:20px">-</div>
+<div class="details">
+<span>💧 Humidity: <b id="humidity">-</b>%</span>
+<span>💨 Wind: <b id="wind">-</b> km/h</span>
+</div>
+</div>
+
+<div class="forecast" id="forecastBox"></div>
+</div>
+
+<script>
+const codes = {0:"☀️ Clear Sky",1:"🌤️ Mainly Clear",2:"⛅ Partly Cloudy",3:"☁️ Overcast",45:"🌫️ Foggy",48:"🌫️ Foggy",51:"🌦️ Light Drizzle",61:"🌧️ Light Rain",63:"🌧️ Rain",65:"⛈️ Heavy Rain",71:"❄️ Light Snow",80:"🌧️ Rain Showers",95:"⛈️ Thunderstorm"};
+function getIcon(code){ return (codes[code]||"🌤️").split(" ")[0]; }
+function getText(code){ return codes[code]||"Clear"; }
+
+async function getWeather(){
+  const city = document.getElementById("cityInput").value.trim();
+  const err = document.getElementById("error");
+  const load = document.getElementById("loading");
+  err.style.display="none";
+  if(!city){ err.textContent="⚠️ Please enter a city name!"; err.style.display="block"; return; }
+  if(city.length < 2){ err.textContent="⚠️ City name is too short!"; err.style.display="block"; return; }
+
+  load.style.display="block";
+  document.getElementById("currentBox").style.display="none";
+  document.getElementById("forecastBox").style.display="none";
+
+  try{
+    const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`);
+    const geo = await geoRes.json();
+    if(!geo.results || geo.results.length===0) throw new Error("City not found");
+
+    const place = geo.results[0];
+    const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto`);
+    const data = await wRes.json();
+
+    document.getElementById("cityName").textContent = `${place.name}, ${place.country}`;
+    document.getElementById("temp").textContent = Math.round(data.current.temperature_2m);
+    document.getElementById("condition").textContent = getText(data.current.weather_code) + " " + getIcon(data.current.weather_code);
+    document.getElementById("humidity").textContent = data.current.relative_humidity_2m;
+    document.getElementById("wind").textContent = data.current.wind_speed_10m;
+    document.getElementById("currentBox").style.display="block";
+
+    let html="";
+    data.daily.time.slice(0,5).forEach((d,i)=>{
+      const date = new Date(d).toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"});
+      html+=`<div class="day"><b>${i===0?"Today":date}</b><div class="icon">${getIcon(data.daily.weather_code[i])}</div><div>${getText(data.daily.weather_code[i])}</div><div style="margin-top:8px">🔺 ${Math.round(data.daily.temperature_2m_max[i])}° 🔻 ${Math.round(data.daily.temperature_2m_min[i])}°</div></div>`;
+    });
+    const fb=document.getElementById("forecastBox");
+    fb.innerHTML=html; fb.style.display="grid";
+  }catch(e){
+    err.textContent="❌ City not found! Try Nagpur, Mumbai, Delhi...";
+    err.style.display="block";
+  } finally { load.style.display="none"; }
+}
+document.getElementById("cityInput").addEventListener("keypress",e=>{ if(e.key==="Enter") getWeather(); });
+window.onload=()=>{ document.getElementById("cityInput").value="Nagpur"; getWeather(); };
+</script>
+</body>
+</html>
